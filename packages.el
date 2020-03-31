@@ -62,3 +62,6 @@
 (package! ripgrep)
 (package! deadgrep)
 (package! suggest)
+
+(package! structured-haskell-mode
+  :recipe (:local-repo "~/Dev/elisp/structured-haskell-mode/elisp/"))

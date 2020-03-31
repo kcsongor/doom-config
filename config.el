@@ -46,6 +46,8 @@
 (setq doom-modeline-modal-icon nil)
 (setq doom-modeline-height 20)
 
+(setq evil-search-wrap nil)
+
 (setq display-line-numbers-type nil)
 
 ;; coq stuff
@@ -135,7 +137,19 @@
             (counsel-M-x     . ivy-posframe-display-at-frame-top-center)
             (t               . ivy-posframe-display-at-frame-top-center))
           ivy-posframe-border-width 1)
-    (ivy-posframe-mode 1)))
+    (ivy-posframe-mode -1)))
+
+(defsection compilation
+  "Compilation settings"
+
+  (require 'ansi-color)
+  (defun endless/colorize-compilation ()
+    "Colorize from `compilation-filter-start' to `point'."
+    (let ((inhibit-read-only t))
+      (ansi-color-apply-on-region
+       compilation-filter-start (point))))
+
+  (add-hook 'compilation-filter-hook #'endless/colorize-compilation))
 
 (defsection poly-mode
   "Poly-mode settings"
@@ -169,7 +183,7 @@
   (map! :prefix ("C-c w" . "workouts")
         :desc "Log workout" "l" 'pushup/log
         :desc "Log pushups" "p" 'pushup/log-pushups
-        :desc "Log pullups" "P" 'pushup/log-pullups
+        :desc "Log pullups" "u" 'pushup/log-pullups
         :desc "Visit workouts" "v" 'pushup/visit))
 
 (defsection coq
@@ -191,7 +205,7 @@
            (,action)
          (,action)
          (when (pg-in-protected-region-p)
-           (company-coq-proof-goto-point))))
+           (proof-goto-point))))
 
     (defun coq-redo ()
       (interactive)
@@ -284,6 +298,59 @@
 
 (map! "C-c g" 'hydra-git/body)
 
+(after! lsp-mode
+  (map! :n "g ?" 'lsp-ui-doc-glance
+        :n "g ]" 'lsp-find-definition)
+  (setq lsp-ui-sideline-enable nil))
+
+(defsection haskell
+  "Haskell stuff."
+
+  (remove-hook 'haskell-mode-hook 'interactive-haskell-mode)
+
+  (remove-hook 'haskell-mode-hook 'structured-haskell-mode)
+
+  (after! flycheck
+    (setq-default flycheck-disabled-checkers '(haskell-ghc haskell-hlint haskell-stack-ghc)))
+
+  (after! 'structured-haskell-mode
+   (define-key shm-map (kbd "M-e") 'shm/goto-parent-end)))
+
+(defsection highlighting
+  "Highlighting."
+  (defvar-local custom-highlights '())
+
+  (require 'files-x)
+
+  (defun do-highlights ()
+    (interactive)
+    (hi-lock-mode)
+
+    (let ((watchers (get-variable-watchers 'hi-lock-interactive-patterns)))
+      (if (member 'update-highlights watchers)
+          (progn
+            (remove-variable-watcher 'hi-lock-interactive-patterns 'update-highlights)
+            (setq hi-lock-interactive-patterns custom-highlights)
+            (add-variable-watcher 'hi-lock-interactive-patterns 'update-highlights))
+        (setq hi-lock-interactive-patterns custom-highlights)))
+
+    (hi-lock-set-file-patterns custom-highlights)
+    (message (format "Loaded %d highlight(s)" (length custom-highlights))))
+
+  (add-variable-watcher 'hi-lock-interactive-patterns 'update-highlights)
+
+  (add-hook 'find-file-hook 'do-highlights)
+
+  (defun update-highlights (sym newval operation where)
+    (interactive)
+    (when (and newval (eq operation 'set))
+      (save-window-excursion
+        (modify-dir-local-variable nil 'custom-highlights newval 'add-or-delete)
+        (save-buffer)))))
+
+(advice-add 'doom--recenter-on-load-saveplace-a :override (lambda ()))
+(remove-hook 'xref-after-jump-hook 'recenter)
+
 (defsection refactoring
   "Tools for project navigation and refactoring."
 
@@ -298,12 +365,103 @@
 
   (use-package! deadgrep
     :config
+    (setq deadgrep-project-root-function 'projectile-project-root)
     (defun cs/deadgrep-visit-result (old-other)
       (if (member cs/error-called-from (deadgrep--buffers))
           (funcall old-other)
         (deadgrep-visit-result)))
-    (advice-add 'deadgrep-visit-result-other-window :around 'cs/deadgrep-visit-result))
+    (advice-add 'deadgrep-visit-result-other-window :around 'cs/deadgrep-visit-result)
 
-  (map! :prefix-map ("C-c r" . "refactoring")
-        "d" 'deadgrep))
+    (defun cs/deadgrep-visit-result-push-mark ()
+      (interactive)
+      (xref-push-marker-stack)
+      (deadgrep-visit-result))
 
+    (defun cs/deadgrep-search-tag (tagname)
+      (interactive (find-tag-interactive "View tag other window: "))
+      (save-excursion
+        (setq deadgrep--search-term tagname)
+        (rename-buffer
+         (deadgrep--buffer-name deadgrep--search-term default-directory) t)
+        (deadgrep-restart)))
+
+    (defun cs/deadgrep-change-term ()
+      (interactive)
+      (save-excursion
+        (goto-char (point-min))
+        (re-search-forward "change")
+        (deadgrep--search-term (point))))
+
+    (defun cs/deadgrep-change-context (how-many)
+      (interactive "nHow many lines before/after: ")
+      (save-excursion
+        (setq deadgrep--context `(,how-many . ,how-many))
+        (deadgrep-restart)))
+
+    (defun cs/deadgrep-change-directory ()
+      (interactive)
+      (deadgrep--directory nil))
+
+    (defun cs/deadgrep-active-searches ()
+      "Return active searches."
+      (-map (lambda (buffer) (cadr (s-split " " (buffer-name buffer)))) (deadgrep--buffers)))
+
+    (defun cs/deadgrep-new-search (term)
+      "Start new search or open existing search buffer."
+      (interactive
+       (list (completing-read "Search term: "
+                              (cs/deadgrep-active-searches)
+                              nil nil (symbol-name (symbol-at-point)))))
+      (let ((existing (-first (lambda (buffer) (s-contains? term (buffer-name buffer)))
+                              (deadgrep--buffers))))
+        (if existing
+            (switch-to-buffer existing)
+          (deadgrep term))))
+
+
+    (defun cs/deadgrep-search-type (type)
+      (interactive "sSearch type: ")
+      (save-excursion
+        (goto-char (point-min))
+        (re-search-forward "Search type:")
+        (re-search-forward type)
+        (deadgrep--search-type (point))))
+
+    (map! :map deadgrep-mode-map
+          "<return>" 'cs/deadgrep-visit-result-push-mark
+          :desc "Search tag" "C-c t" 'cs/deadgrep-search-tag
+          :desc "Search" "C-c c" 'cs/deadgrep-change-term
+          :desc "Change type" "C-c r" 'cs/deadgrep-search-type
+          :desc "Change directory" "C-c d" 'cs/deadgrep-change-directory
+          :n "C-j" 'deadgrep-forward-match
+          :n "C-k" 'deadgrep-backward-match
+          :desc "Change context" "C-c -" 'cs/deadgrep-change-context))
+
+    (map! :prefix-map ("C-c r" . "refactoring")
+          "d" 'cs/deadgrep-new-search))
+
+(defun rename-current-buffer-file ()
+  "Renames current buffer and file it is visiting."
+  (interactive)
+  (let ((name (buffer-name))
+        (filename (buffer-file-name)))
+    (if (not (and filename (file-exists-p filename)))
+        (error "Buffer '%s' is not visiting a file!" name)
+      (let ((new-name (read-file-name "New name: " filename)))
+        (if (get-buffer new-name)
+            (error "A buffer named '%s' already exists!" new-name)
+          (rename-file filename new-name 1)
+          (rename-buffer new-name)
+          (set-visited-file-name new-name)
+          (set-buffer-modified-p nil)
+          (message "File '%s' successfully renamed to '%s'"
+                   name (file-name-nondirectory new-name)))))))
+
+(map! :desc "Rename buffer file" :n "SPC b R" 'rename-current-buffer-file)
+
+(defsection ghc
+  "Working on ghc."
+  (defun ghc-gen-trace ()
+    (interactive)
+    (save-window-excursion
+      (async-shell-command (format "./ghc %s -fforce-recomp -ddump-tc-trace -ddump-rn-trace -ddump-to-file" (buffer-name))))))

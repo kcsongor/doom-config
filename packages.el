@@ -46,13 +46,16 @@
 ;; our package manager can't deal with; see raxod502/straight.el#279)
                                         ;(package! builtin-package :recipe (:branch "develop"))
 (package! agda-input :pin "0895178")
-(package! agda :pin "0895178")
+(package! agda2-mode :pin "0895178")
 
 (package! pushups
   :recipe (:local-repo "~/Dev/elisp/pushup/"))
 
 (package! dark-mode
   :recipe (:local-repo "~/Dev/elisp/dark-mode/"))
+
+(package! ghcid
+  :recipe (:local-repo "~/Dev/elisp/ghcid/"))
 
 (package! paredit)
 (package! evil-paredit)

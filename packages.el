@@ -32,6 +32,7 @@
 ;(package! builtin-package :disable t)
 
 (package! hl-line :disable t)
+(package! diredfl :disable t)
 
 (package! polymode)
 
@@ -51,6 +52,9 @@
 (package! pushups
   :recipe (:local-repo "~/Dev/elisp/pushup/"))
 
+(package! presenter
+  :recipe (:local-repo "~/Dev/elisp/presenter/"))
+
 (package! dark-mode
   :recipe (:local-repo "~/Dev/elisp/dark-mode/"))
 
@@ -65,6 +69,30 @@
 (package! ripgrep)
 (package! deadgrep)
 (package! suggest)
+(package! diminish)
 
 (package! structured-haskell-mode
   :recipe (:local-repo "~/Dev/elisp/structured-haskell-mode/elisp/"))
+
+(package! tao-theme
+  :recipe (:local-repo "~/Dev/elisp/tao-theme-emacs/"))
+
+(package! dired-plus)
+(package! ace-jump-mode)
+(package! evil-snipe :disable t)
+(package! yasnippet-snippets)
+
+(package! ormolu)
+(package! org-superstar)
+(package! org-pdftools)
+(package! magithub)
+
+;; org-ref
+(package! org-ref)
+(package! helm-bibtex)
+(package! bibtex-completion)
+
+(package! org-agda-mode
+  :recipe (:host github :repo "alhassy/org-agda-mode"))
+
+(package! helm-swoop)
